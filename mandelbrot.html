@@ -44,7 +44,10 @@
       background: #000;
       image-rendering: pixelated;
       filter: saturate(1.05) contrast(1.02);
+      cursor: grab;
     }
+
+    canvas.dragging { cursor: grabbing; }
 
     #hud {
       position: absolute;
@@ -198,6 +201,12 @@
         <div><span id="hueSpeedVal">60</span>°/s</div>
       </div>
 
+      <div class="row compact">
+        <label for="hueToggle">Animate hue</label>
+        <input type="checkbox" id="hueToggle" checked />
+        <div></div>
+      </div>
+
       <div class="row">
         <label for="zoom">Zoom</label>
         <input type="range" id="zoom" min="0" max="18" value="0" step="0.01" />
@@ -268,6 +277,7 @@
       scheme: document.getElementById('scheme'),
       hueSpeed: document.getElementById('hueSpeed'),
       hueSpeedVal: document.getElementById('hueSpeedVal'),
+      hueToggle: document.getElementById('hueToggle'),
       zoom: document.getElementById('zoom'),
       zoomVal: document.getElementById('zoomVal'),
       iter: document.getElementById('iter'),
@@ -295,6 +305,7 @@
       supersample: 1,
       colorScheme: 'psy',
       hueSpeedDegPerSec: 60,
+      hueAnimate: true,
       // internal
       renderVersion: 0
     });
@@ -619,8 +630,9 @@
     let lastDrag = { x: 0, y: 0 };
 
     const onPointerDown = (ev) => {
-      if (ev.button === 1) return; // ignore middle button
+      if (ev.button !== 0) return; // left button only for dragging
       isDragging = true;
+      canvas.classList.add('dragging');
       lastDrag = { x: ev.clientX, y: ev.clientY };
     };
 
@@ -643,7 +655,7 @@
       scheduleRenderDebounced();
     };
 
-    const onPointerUp = () => { isDragging = false; };
+    const onPointerUp = () => { isDragging = false; canvas.classList.remove('dragging'); };
 
     const onDblClick = (ev) => {
       // Zoom in at click location
@@ -685,6 +697,16 @@
     ui.scheme.addEventListener('change', () => { state = { ...state, colorScheme: ui.scheme.value }; scheduleRender(); });
     ui.hueSpeed.addEventListener('input', () => { ui.hueSpeedVal.textContent = ui.hueSpeed.value; });
     ui.hueSpeed.addEventListener('change', () => { /* applied in RAF loop via CSS filter */ });
+    ui.hueToggle.addEventListener('change', () => {
+      const enabled = ui.hueToggle.checked;
+      state = { ...state, hueAnimate: enabled };
+      ui.hueSpeed.disabled = !enabled;
+      if (!enabled) {
+        // reset to base filter when animation disabled
+        const base = 'saturate(1.08) contrast(1.03)';
+        canvas.style.filter = base;
+      }
+    });
 
     ui.zoom.addEventListener('input', () => { setScaleFromZoomSlider(ui.zoom.value); scheduleRenderDebounced(); });
 
@@ -698,6 +720,8 @@
       ui.scheme.value = state.colorScheme;
       ui.hueSpeed.value = state.hueSpeedDegPerSec;
       ui.hueSpeedVal.textContent = ui.hueSpeed.value;
+      ui.hueToggle.checked = state.hueAnimate;
+      ui.hueSpeed.disabled = !state.hueAnimate;
       ui.iter.value = state.maxIterations; ui.iterVal.textContent = ui.iter.value;
       ui.autoIter.checked = state.autoIterations;
       ui.supersample.value = String(state.supersample);
@@ -721,9 +745,12 @@
       const dt = (now - hueAnim.lastTime) / 1000;
       hueAnim.lastTime = now;
       const speed = parseFloat(ui.hueSpeed.value || '0');
-      if (speed > 0 && document.hasFocus()) {
+      if (state.hueAnimate && speed > 0 && document.hasFocus()) {
         hueAnim.angle = (hueAnim.angle + speed * dt) % 360;
         setCanvasHueRotate(hueAnim.angle);
+      } else if (!state.hueAnimate) {
+        const base = 'saturate(1.08) contrast(1.03)';
+        canvas.style.filter = base;
       }
       requestAnimationFrame(animate);
     };
@@ -736,6 +763,7 @@
     canvas.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
     canvas.addEventListener('dblclick', onDblClick);
     canvas.addEventListener('contextmenu', onContextMenu);
 
