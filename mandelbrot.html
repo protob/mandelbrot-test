@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mandelbrot Explorer — Psychedelic Canvas</title>
+  <style>
+    :root {
+      --bg0: #0b0f14;
+      --bg1: #11161d;
+      --fg: #e6edf3;
+      --muted: #9fb0c0;
+      --accent: #7aa2ff;
+      --accent2: #ff7af6;
+      --good: #6bffad;
+      --warn: #ffd36b;
+      --danger: #ff6b6b;
+      --shadow: rgba(0, 0, 0, 0.35);
+      --panel: rgba(14, 18, 25, 0.85);
+      --panel-border: rgba(255, 255, 255, 0.08);
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: radial-gradient(1200px 800px at 70% 30%, #0e1220, var(--bg0));
+      color: var(--fg);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      overflow: hidden;
+    }
+
+    #wrap {
+      position: fixed;
+      inset: 0;
+    }
+
+    canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #000;
+      image-rendering: pixelated;
+      filter: saturate(1.05) contrast(1.02);
+    }
+
+    #hud {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 2;
+    }
+
+    .panel {
+      backdrop-filter: blur(6px);
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      box-shadow: 0 8px 30px var(--shadow);
+      padding: 12px 14px;
+      min-width: 320px;
+      max-width: min(92vw, 560px);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 140px 1fr 64px;
+      gap: 10px;
+      align-items: center;
+      margin: 6px 0;
+    }
+
+    .row.compact { grid-template-columns: 120px 1fr 80px; }
+
+    .row label { color: var(--muted); font-size: 12px; letter-spacing: .3px; }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    input[type="checkbox"] { transform: translateY(1px) scale(1.05); }
+
+    select, button, input[type="number"], input[type="text"] {
+      color: var(--fg);
+      background: #0c111a;
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      outline: none;
+    }
+
+    select:focus, button:focus, input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(122,162,255,0.15); }
+
+    button {
+      cursor: pointer;
+      background: linear-gradient(180deg, #0f1524, #0c111a);
+    }
+
+    button.primary { border-color: rgba(122,162,255,0.6); color: #cfe0ff; }
+    button.ghost { background: transparent; }
+
+    #header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    #title {
+      font-weight: 700;
+      letter-spacing: .35px;
+      font-size: 14px;
+    }
+
+    #subtitle { font-size: 11px; color: var(--muted); }
+
+    #footer { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+    .badge {
+      font-size: 10px;
+      color: #bcd4ff;
+      background: rgba(122,162,255,0.12);
+      border: 1px solid rgba(122,162,255,0.25);
+      padding: 4px 8px;
+      border-radius: 999px;
+    }
+
+    #progressBarWrap { height: 6px; background: #0c111a; border: 1px solid var(--panel-border); border-radius: 999px; overflow: hidden; }
+    #progressBar { height: 100%; width: 0%; background: linear-gradient(90deg, #7aa2ff, #ff7af6, #6bffad); box-shadow: 0 0 14px rgba(122,162,255,0.35) inset; transition: width .15s ease-out; }
+
+    #legend {
+      position: absolute;
+      right: 12px;
+      bottom: 12px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--panel-border);
+      background: var(--panel);
+      font-size: 12px;
+      color: var(--muted);
+      display: grid;
+      gap: 6px;
+      z-index: 2;
+    }
+
+    #hint { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    @media (max-width: 720px) {
+      .row { grid-template-columns: 120px 1fr 56px; }
+      .split { grid-template-columns: 1fr; }
+      .panel { min-width: unset; }
+    }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="canvas"></canvas>
+
+    <div id="hud" class="panel">
+      <div id="header">
+        <div>
+          <div id="title">Mandelbrot Explorer</div>
+          <div id="subtitle">Psychedelic, multi‑core, smooth coloring</div>
+        </div>
+        <div class="badge" id="perf">—</div>
+      </div>
+
+      <div class="row">
+        <label for="scheme">Color scheme</label>
+        <select id="scheme">
+          <option value="psy">Psychedelic</option>
+          <option value="rainbow">Rainbow</option>
+          <option value="neon">Neon</option>
+          <option value="fire">Fire</option>
+          <option value="ocean">Ocean</option>
+          <option value="ice">Ice</option>
+          <option value="mono">Monochrome</option>
+        </select>
+        <div></div>
+      </div>
+
+      <div class="row">
+        <label for="hueSpeed">Hue animation</label>
+        <input type="range" id="hueSpeed" min="0" max="360" value="60" step="1" />
+        <div><span id="hueSpeedVal">60</span>°/s</div>
+      </div>
+
+      <div class="row">
+        <label for="zoom">Zoom</label>
+        <input type="range" id="zoom" min="0" max="18" value="0" step="0.01" />
+        <div id="zoomVal">1×</div>
+      </div>
+
+      <div class="row">
+        <label for="iter">Iterations</label>
+        <input type="range" id="iter" min="50" max="5000" value="800" step="10" />
+        <div><span id="iterVal">800</span></div>
+      </div>
+
+      <div class="row compact">
+        <label for="autoIter">Auto iterations</label>
+        <input type="checkbox" id="autoIter" checked />
+        <div></div>
+      </div>
+
+      <div class="row">
+        <label for="supersample">Supersampling</label>
+        <select id="supersample">
+          <option value="1">1× (Fast)</option>
+          <option value="2">2× (Sharper)</option>
+        </select>
+        <div></div>
+      </div>
+
+      <div class="row compact">
+        <label for="smooth">Smooth coloring</label>
+        <input type="checkbox" id="smooth" checked />
+        <div></div>
+      </div>
+
+      <div class="split">
+        <button id="reset" class="ghost">Reset</button>
+        <button id="save" class="primary">Save PNG</button>
+      </div>
+
+      <div id="hint">Scroll to zoom at cursor. Drag to pan. Shift+Drag: precise pan. Double‑click to zoom in. Right‑click to zoom out.</div>
+
+      <div id="progressBarWrap" aria-hidden="true"><div id="progressBar"></div></div>
+
+      <div id="footer">
+        <div class="badge" id="coords">center —</div>
+        <div class="badge" id="scaleBadge">width —</div>
+        <div class="badge" id="workersBadge">— workers</div>
+      </div>
+    </div>
+
+    <div id="legend">
+      <div>• Maximize window for more detail</div>
+      <div>• Increase iterations for deep zooms</div>
+      <div>• Try color schemes with hue animation</div>
+    </div>
+  </div>
+
+  <script>
+    // ===== Functional Utilities =====
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const easeOutQuad = t => 1 - (1 - t) * (1 - t);
+
+    // ===== Canvas and State =====
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+
+    const ui = {
+      scheme: document.getElementById('scheme'),
+      hueSpeed: document.getElementById('hueSpeed'),
+      hueSpeedVal: document.getElementById('hueSpeedVal'),
+      zoom: document.getElementById('zoom'),
+      zoomVal: document.getElementById('zoomVal'),
+      iter: document.getElementById('iter'),
+      iterVal: document.getElementById('iterVal'),
+      autoIter: document.getElementById('autoIter'),
+      supersample: document.getElementById('supersample'),
+      smooth: document.getElementById('smooth'),
+      reset: document.getElementById('reset'),
+      save: document.getElementById('save'),
+      coords: document.getElementById('coords'),
+      scaleBadge: document.getElementById('scaleBadge'),
+      workersBadge: document.getElementById('workersBadge'),
+      progressBar: document.getElementById('progressBar'),
+      perf: document.getElementById('perf')
+    };
+
+    const initialState = () => ({
+      centerX: -0.75,
+      centerY: 0.0,
+      // scale is the complex-plane width visible across the canvas
+      scale: 3.5,
+      maxIterations: 800,
+      autoIterations: true,
+      smoothColoring: true,
+      supersample: 1,
+      colorScheme: 'psy',
+      hueSpeedDegPerSec: 60,
+      // internal
+      renderVersion: 0
+    });
+
+    let state = initialState();
+
+    // ===== Workers Setup =====
+    const tileSize = 256;
+    const workerCount = Math.min(Math.max(2, (navigator.hardwareConcurrency || 4)), 8);
+    ui.workersBadge.textContent = `${workerCount} workers`;
+
+    const workerSource = () => `
+      const clamp = (v, mn, mx) => Math.max(mn, Math.min(mx, v));
+      const hsvToRgb = (h, s, v) => {
+        const c = v * s;
+        const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+        const m = v - c;
+        let r = 0, g = 0, b = 0;
+        if (0 <= h && h < 60) { r = c; g = x; b = 0; }
+        else if (60 <= h && h < 120) { r = x; g = c; b = 0; }
+        else if (120 <= h && h < 180) { r = 0; g = c; b = x; }
+        else if (180 <= h && h < 240) { r = 0; g = x; b = c; }
+        else if (240 <= h && h < 300) { r = x; g = 0; b = c; }
+        else { r = c; g = 0; b = x; }
+        return [
+          Math.round((r + m) * 255),
+          Math.round((g + m) * 255),
+          Math.round((b + m) * 255)
+        ];
+      };
+
+      const colorizers = {
+        // t in [0,1], n: iteration, inside=false if escaped
+        psy: (t, inside) => {
+          if (inside) return [0, 0, 0];
+          const k = 360;
+          const h = (720 * t + 60 * Math.sin(2 * Math.PI * (t * 3.7))) % 360;
+          const s = 0.75 + 0.25 * Math.sin(2 * Math.PI * (t * 2.1 + 0.15));
+          const v = 0.35 + 0.65 * Math.pow(t, 0.35);
+          return hsvToRgb(h, clamp(s, 0, 1), clamp(v, 0, 1));
+        },
+        rainbow: (t, inside) => inside ? [0,0,0] : hsvToRgb((360 * t) % 360, 1, Math.pow(t, 0.3)),
+        neon: (t, inside) => {
+          if (inside) return [0, 0, 0];
+          const h = (300 + 360 * Math.pow(t, 0.9)) % 360;
+          const s = 1.0;
+          const v = 0.25 + 0.85 * Math.sin(2 * Math.PI * (t * 1.2 + 0.2)) ** 2;
+          return hsvToRgb(h, s, clamp(v, 0, 1));
+        },
+        fire: (t, inside) => {
+          if (inside) return [0, 0, 0];
+          const v = clamp(Math.pow(t, 0.25), 0, 1);
+          const h = 25 - 25 * v; // reds to yellows
+          const s = 0.8 + 0.2 * v;
+          return hsvToRgb(h, s, v);
+        },
+        ocean: (t, inside) => inside ? [0,0,0] : hsvToRgb(200 + 80 * t, 0.7 + 0.3 * t, 0.25 + 0.75 * Math.pow(t, 0.6)),
+        ice: (t, inside) => inside ? [0,0,0] : hsvToRgb(190 + 30 * Math.pow(t, 0.7), 0.2 + 0.6 * t, 0.9 * t),
+        mono: (t, inside) => {
+          const v = inside ? 0 : Math.round(255 * t);
+          return [v, v, v];
+        }
+      };
+
+      const iteratePoint = (cx, cy, maxIter, smooth) => {
+        // Escape time with smooth iteration count
+        let x = 0.0, y = 0.0;
+        let xx = 0.0, yy = 0.0, xy = 0.0;
+        let iter = 0;
+        // Quick cardioid/bulb check to skip heavy work for interior points
+        const q = (cx - 0.25) * (cx - 0.25) + cy * cy;
+        if (q * (q + (cx - 0.25)) < 0.25 * cy * cy) {
+          return { escaped: false, mu: maxIter };
+        }
+        if ((cx + 1) * (cx + 1) + cy * cy < 0.0625) {
+          return { escaped: false, mu: maxIter };
+        }
+        while (iter < maxIter && (xx + yy) <= 4.0) {
+          xy = x * y;
+          x = xx - yy + cx;
+          y = 2.0 * xy + cy;
+          xx = x * x;
+          yy = y * y;
+          iter++;
+        }
+        if (iter >= maxIter) {
+          return { escaped: false, mu: maxIter };
+        }
+        if (!smooth) {
+          return { escaped: true, mu: iter };
+        }
+        // smooth: continuous escape count
+        const log_zn = Math.log(xx + yy) / 2.0;
+        const nu = Math.log(log_zn / Math.log(2)) / Math.log(2);
+        const mu = iter + 1 - nu;
+        return { escaped: true, mu };
+      };
+
+      const renderTile = (params) => {
+        const { x, y, w, h, canvasWidth, canvasHeight, centerX, centerY, scale, maxIterations, smoothColoring, supersample, scheme } = params;
+        const aspect = canvasHeight === 0 ? 1 : (canvasWidth / canvasHeight);
+        const planeWidth = scale;
+        const planeHeight = scale / aspect;
+        const dx = planeWidth / canvasWidth;
+        const dy = planeHeight / canvasHeight;
+
+        const img = new ImageData(w, h);
+        const data = img.data;
+        const colorize = colorizers[scheme] || colorizers['psy'];
+
+        const ss = Math.max(1, supersample | 0);
+        const invSS2 = 1.0 / (ss * ss);
+
+        let o = 0;
+        for (let j = 0; j < h; j++) {
+          const py = y + j;
+          for (let i = 0; i < w; i++) {
+            const px = x + i;
+            let accR = 0, accG = 0, accB = 0;
+
+            for (let sj = 0; sj < ss; sj++) {
+              const subY = (py + (sj + 0.5) / ss) - canvasHeight / 2;
+              const cY = centerY + subY * dy;
+              for (let si = 0; si < ss; si++) {
+                const subX = (px + (si + 0.5) / ss) - canvasWidth / 2;
+                const cX = centerX + subX * dx;
+                const res = iteratePoint(cX, cY, maxIterations, smoothColoring);
+                const tRaw = res.escaped ? res.mu / maxIterations : 0.0;
+                const t = Math.pow(clamp(tRaw, 0, 1), 0.98);
+                const [r, g, b] = colorize(t, !res.escaped);
+                accR += r; accG += g; accB += b;
+              }
+            }
+
+            data[o++] = Math.round(accR * invSS2);
+            data[o++] = Math.round(accG * invSS2);
+            data[o++] = Math.round(accB * invSS2);
+            data[o++] = 255;
+          }
+        }
+        return img;
+      };
+
+      self.onmessage = (ev) => {
+        const msg = ev.data;
+        if (msg.type === 'render') {
+          const { version, task } = msg;
+          const imageData = renderTile(task);
+          self.postMessage({ type: 'tile', version, x: task.x, y: task.y, imageData }, [imageData.data.buffer]);
+        }
+      };
+    `;
+
+    const createWorker = () => new Worker(URL.createObjectURL(new Blob([workerSource()], { type: 'application/javascript' })));
+    const workers = Array.from({ length: workerCount }, createWorker);
+
+    // ===== Resize Handling =====
+    const resizeCanvasToDisplaySize = () => {
+      const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2.5));
+      const w = Math.floor(canvas.clientWidth * dpr);
+      const h = Math.floor(canvas.clientHeight * dpr);
+      if (canvas.width === w && canvas.height === h) return false;
+      canvas.width = w; canvas.height = h;
+      ctx.imageSmoothingEnabled = false;
+      return true;
+    };
+
+    const setCanvasHueRotate = (deg) => {
+      const base = 'saturate(1.08) contrast(1.03)';
+      canvas.style.filter = `hue-rotate(${deg}deg) ${base}`;
+    };
+
+    // ===== Render Queue / Manager =====
+    let currentTasks = [];
+    let completedTiles = 0;
+    let totalTiles = 0;
+    let frameTimer = { lastStart: 0, lastRenderMs: 0 };
+
+    const makeTiles = (width, height) => {
+      const tiles = [];
+      for (let y = 0; y < height; y += tileSize) {
+        for (let x = 0; x < width; x += tileSize) {
+          tiles.push({ x, y, w: Math.min(tileSize, width - x), h: Math.min(tileSize, height - y) });
+        }
+      }
+      // prioritize center tiles first
+      const cx = width / 2, cy = height / 2;
+      tiles.sort((a, b) => {
+        const da = Math.hypot(a.x + a.w / 2 - cx, a.y + a.h / 2 - cy);
+        const db = Math.hypot(b.x + b.w / 2 - cx, b.y + b.h / 2 - cy);
+        return da - db;
+      });
+      return tiles;
+    };
+
+    const scheduleRender = () => {
+      state = { ...state, renderVersion: state.renderVersion + 1 };
+      const version = state.renderVersion;
+      const width = canvas.width;
+      const height = canvas.height;
+      if (!width || !height) return;
+
+      // auto iterations based on zoom level and viewport size
+      const zoomFactor = 3.5 / state.scale;
+      const targetIter = Math.floor(200 + 80 * Math.log2(1 + zoomFactor));
+      const maxIterations = state.autoIterations ? clamp(targetIter, 100, 6000) : state.maxIterations;
+
+      const tiles = makeTiles(width, height);
+      currentTasks = tiles;
+      completedTiles = 0;
+      totalTiles = tiles.length;
+      ui.progressBar.style.width = '0%';
+
+      const taskCommon = {
+        canvasWidth: width,
+        canvasHeight: height,
+        centerX: state.centerX,
+        centerY: state.centerY,
+        scale: state.scale,
+        maxIterations,
+        smoothColoring: state.smoothColoring,
+        supersample: state.supersample,
+        scheme: state.colorScheme
+      };
+
+      // cancel any pending worker handlers and rebind
+      workers.forEach((w) => {
+        w.onmessage = (ev) => {
+          const msg = ev.data;
+          if (!msg || msg.type !== 'tile') return;
+          if (msg.version !== state.renderVersion) return; // stale
+          // draw tile
+          const { x, y, imageData } = msg;
+          ctx.putImageData(imageData, x, y);
+          completedTiles++;
+          const pct = (completedTiles / totalTiles) * 100;
+          ui.progressBar.style.width = `${pct.toFixed(1)}%`;
+
+          if (completedTiles >= totalTiles) {
+            frameTimer.lastRenderMs = performance.now() - frameTimer.lastStart;
+            ui.perf.textContent = `${Math.round(width)}×${Math.round(height)} @ ${maxIterations} it • ${(frameTimer.lastRenderMs).toFixed(0)} ms`;
+          }
+          requestWork(w);
+        };
+      });
+
+      const requestWork = (w) => {
+        const t = currentTasks.shift();
+        if (!t) return;
+        w.postMessage({ type: 'render', version, task: { ...t, ...taskCommon } });
+      };
+
+      frameTimer.lastStart = performance.now();
+      workers.forEach(requestWork);
+
+      // update badges
+      ui.coords.textContent = `center ${state.centerX.toExponential(4)}, ${state.centerY.toExponential(4)}`;
+      ui.scaleBadge.textContent = `width ${state.scale.toExponential(4)}`;
+    };
+
+    // ===== Interaction: Zoom, Pan, UI =====
+    const updateZoomSliderFromScale = () => {
+      // slider is log-scale: value in [0, 18] maps to scale in [3.5, 3.5*2^-18]
+      const zoomLevel = Math.log2(3.5 / state.scale);
+      ui.zoom.value = clamp(zoomLevel, 0, 18).toFixed(2);
+      ui.zoomVal.textContent = `${(Math.pow(2, zoomLevel)).toFixed(2)}×`;
+    };
+
+    const setScaleFromZoomSlider = (val) => {
+      const z = parseFloat(val);
+      const newScale = 3.5 / Math.pow(2, z);
+      state = { ...state, scale: newScale };
+      ui.zoomVal.textContent = `${(Math.pow(2, z)).toFixed(2)}×`;
+    };
+
+    const debounced = (fn, ms) => {
+      let t = 0;
+      return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+    };
+
+    const scheduleRenderDebounced = debounced(scheduleRender, 120);
+
+    const onWheel = (ev) => {
+      ev.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const px = (ev.clientX - rect.left) * (canvas.width / rect.width);
+      const py = (ev.clientY - rect.top) * (canvas.height / rect.height);
+
+      const wheelDelta = ev.deltaY;
+      const zoomIntensity = ev.ctrlKey ? 0.09 : 0.18; // pinch-zoom slower
+      const zoomFactor = Math.pow(2, -zoomIntensity * Math.sign(wheelDelta));
+
+      const aspect = canvas.width / canvas.height;
+      const planeWidth = state.scale;
+      const planeHeight = state.scale / aspect;
+      const dx = planeWidth / canvas.width;
+      const dy = planeHeight / canvas.height;
+
+      const worldXBefore = state.centerX + (px - canvas.width / 2) * dx;
+      const worldYBefore = state.centerY + (py - canvas.height / 2) * dy;
+
+      const newScale = clamp(state.scale * (1 / zoomFactor), 1e-16, 4);
+      const newZoomLevel = Math.log2(3.5 / newScale);
+
+      const planeWidthAfter = newScale;
+      const planeHeightAfter = newScale / aspect;
+      const dxAfter = planeWidthAfter / canvas.width;
+      const dyAfter = planeHeightAfter / canvas.height;
+
+      const worldXAfter = worldXBefore;
+      const worldYAfter = worldYBefore;
+      const newCenterX = worldXAfter - (px - canvas.width / 2) * dxAfter;
+      const newCenterY = worldYAfter - (py - canvas.height / 2) * dyAfter;
+
+      state = { ...state, scale: newScale, centerX: newCenterX, centerY: newCenterY };
+      ui.zoom.value = clamp(newZoomLevel, 0, 18).toFixed(2);
+      ui.zoomVal.textContent = `${(Math.pow(2, newZoomLevel)).toFixed(2)}×`;
+      scheduleRenderDebounced();
+    };
+
+    let isDragging = false;
+    let lastDrag = { x: 0, y: 0 };
+
+    const onPointerDown = (ev) => {
+      if (ev.button === 1) return; // ignore middle button
+      isDragging = true;
+      lastDrag = { x: ev.clientX, y: ev.clientY };
+    };
+
+    const onPointerMove = (ev) => {
+      if (!isDragging) return;
+      const dxPixels = ev.clientX - lastDrag.x;
+      const dyPixels = ev.clientY - lastDrag.y;
+      lastDrag = { x: ev.clientX, y: ev.clientY };
+
+      const scaleFactor = ev.shiftKey ? 0.35 : 1.0; // precise with Shift
+      const aspect = canvas.width / canvas.height;
+      const planeWidth = state.scale;
+      const planeHeight = state.scale / aspect;
+
+      state = {
+        ...state,
+        centerX: state.centerX - (dxPixels / canvas.width) * planeWidth * scaleFactor,
+        centerY: state.centerY - (dyPixels / canvas.height) * planeHeight * scaleFactor
+      };
+      scheduleRenderDebounced();
+    };
+
+    const onPointerUp = () => { isDragging = false; };
+
+    const onDblClick = (ev) => {
+      // Zoom in at click location
+      const rect = canvas.getBoundingClientRect();
+      const px = (ev.clientX - rect.left) * (canvas.width / rect.width);
+      const py = (ev.clientY - rect.top) * (canvas.height / rect.height);
+
+      const aspect = canvas.width / canvas.height;
+      const planeWidth = state.scale;
+      const planeHeight = state.scale / aspect;
+      const dx = planeWidth / canvas.width;
+      const dy = planeHeight / canvas.height;
+
+      const worldX = state.centerX + (px - canvas.width / 2) * dx;
+      const worldY = state.centerY + (py - canvas.height / 2) * dy;
+
+      const newScale = clamp(state.scale * 0.5, 1e-16, 4);
+      const planeWidthAfter = newScale;
+      const planeHeightAfter = newScale / aspect;
+      const dxAfter = planeWidthAfter / canvas.width;
+      const dyAfter = planeHeightAfter / canvas.height;
+
+      const newCenterX = worldX - (px - canvas.width / 2) * dxAfter;
+      const newCenterY = worldY - (py - canvas.height / 2) * dyAfter;
+      state = { ...state, scale: newScale, centerX: newCenterX, centerY: newCenterY };
+      updateZoomSliderFromScale();
+      scheduleRender();
+    };
+
+    const onContextMenu = (ev) => {
+      ev.preventDefault();
+      // Zoom out
+      state = { ...state, scale: clamp(state.scale * 2.0, 1e-16, 4) };
+      updateZoomSliderFromScale();
+      scheduleRender();
+    };
+
+    // ===== UI Wiring =====
+    ui.scheme.addEventListener('change', () => { state = { ...state, colorScheme: ui.scheme.value }; scheduleRender(); });
+    ui.hueSpeed.addEventListener('input', () => { ui.hueSpeedVal.textContent = ui.hueSpeed.value; });
+    ui.hueSpeed.addEventListener('change', () => { /* applied in RAF loop via CSS filter */ });
+
+    ui.zoom.addEventListener('input', () => { setScaleFromZoomSlider(ui.zoom.value); scheduleRenderDebounced(); });
+
+    ui.iter.addEventListener('input', () => { ui.iterVal.textContent = ui.iter.value; state = { ...state, maxIterations: parseInt(ui.iter.value, 10) }; scheduleRenderDebounced(); });
+    ui.autoIter.addEventListener('change', () => { state = { ...state, autoIterations: ui.autoIter.checked }; scheduleRender(); });
+    ui.supersample.addEventListener('change', () => { state = { ...state, supersample: parseInt(ui.supersample.value, 10) }; scheduleRender(); });
+    ui.smooth.addEventListener('change', () => { state = { ...state, smoothColoring: ui.smooth.checked }; scheduleRender(); });
+
+    ui.reset.addEventListener('click', () => {
+      state = initialState();
+      ui.scheme.value = state.colorScheme;
+      ui.hueSpeed.value = state.hueSpeedDegPerSec;
+      ui.hueSpeedVal.textContent = ui.hueSpeed.value;
+      ui.iter.value = state.maxIterations; ui.iterVal.textContent = ui.iter.value;
+      ui.autoIter.checked = state.autoIterations;
+      ui.supersample.value = String(state.supersample);
+      ui.smooth.checked = state.smoothColoring;
+      updateZoomSliderFromScale();
+      setCanvasHueRotate(0);
+      scheduleRender();
+    });
+
+    ui.save.addEventListener('click', () => {
+      const a = document.createElement('a');
+      a.download = `mandelbrot_${Date.now()}.png`;
+      a.href = canvas.toDataURL('image/png');
+      a.click();
+    });
+
+    // ===== Animate Hue via CSS filter (free) =====
+    let hueAnim = { angle: 0, lastTime: performance.now() };
+    const animate = () => {
+      const now = performance.now();
+      const dt = (now - hueAnim.lastTime) / 1000;
+      hueAnim.lastTime = now;
+      const speed = parseFloat(ui.hueSpeed.value || '0');
+      if (speed > 0 && document.hasFocus()) {
+        hueAnim.angle = (hueAnim.angle + speed * dt) % 360;
+        setCanvasHueRotate(hueAnim.angle);
+      }
+      requestAnimationFrame(animate);
+    };
+
+    // ===== Lifecycle =====
+    const onResize = () => { if (resizeCanvasToDisplaySize()) scheduleRender(); };
+    window.addEventListener('resize', onResize);
+
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    canvas.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('dblclick', onDblClick);
+    canvas.addEventListener('contextmenu', onContextMenu);
+
+    // Initial
+    resizeCanvasToDisplaySize();
+    updateZoomSliderFromScale();
+    scheduleRender();
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>
